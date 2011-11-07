@@ -1,0 +1,5 @@
+python-cql (1.0.6-1) UNRELEASED; urgency=low
+
+  * Initial debian packaging
+
+ -- paul cannon <paul@datastax.com>  Mon, 07 Nov 2011 16:10:28 -0600

@@ -1,0 +1,17 @@
+Source: python-cql
+Section: python
+Priority: extra
+Maintainer: paul cannon <paul@datastax.com>
+Build-Depends: debhelper (>= 7.0.50~), python-support
+Standards-Version: 3.8.4
+XS-Python-Version: >= 2.4
+Homepage: http://code.google.com/a/apache-extras.org/p/cassandra-dbapi2/
+
+Package: python-cql
+Architecture: all
+Depends: ${misc:Depends}, python-thrift, ${python:Depends}
+Description: DB-API 2.0 compliant client library for Cassandra/CQL
+ CQL is an SQL-like query language for the highly scalable distributed database
+ Cassandra. This package provides a Python driver for making queries to a
+ Cassandra installation using CQL, using the standard Python database API
+ ("DB-API 2.0").
