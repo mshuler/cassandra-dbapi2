@@ -10,7 +10,6 @@ Source0:        http://cassandra-dbapi2.apache-extras.org.codespot.com/files/cql
 BuildArch:      noarch
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
-BuildRequires:  python26-devel
 Requires:       /usr/bin/python2.6, python26-thrift
 
 %global __python python2.6
