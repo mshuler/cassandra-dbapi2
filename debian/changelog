@@ -1,3 +1,12 @@
+python-cql (1.0.7-1) UNRELEASED; urgency=low
+
+  * New release. Includes:
+    + Fixed unit test for TRUNCATE
+    + Improve recognition of substitution parameters (":foo")
+    + Fix some unmarshallers when used under python2.4
+
+ -- paul cannon <paul@datastax.com>  Tue, 27 Dec 2011 17:04:18 -0600
+
 python-cql (1.0.6-1) UNRELEASED; urgency=low
 
   * Initial debian packaging
