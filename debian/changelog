@@ -1,3 +1,10 @@
+python-cql (1.0.8-1) UNRELEASED; urgency=low
+
+  * Fix handling of comment-like characters (e.g., "--", "//")
+    inside string literals.
+
+ -- paul cannon <paul@datastax.com>  Tue, 24 Jan 2012 15:42:55 -0600
+
 python-cql (1.0.7-1) UNRELEASED; urgency=low
 
   * New release. Includes:
