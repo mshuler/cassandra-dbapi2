@@ -1,3 +1,13 @@
+python-cql (1.0.9-1) UNRELEASED; urgency=low
+
+  * allow for user-definable behavior on decode errors
+  * support for prepared statements
+  * add marshalling capability
+  * add CQL version support (and thrift files recompile for thrift 7)
+  * dropping lenny support (building on squeeze now)
+
+ -- paul cannon <paul@datastax.com>  Wed, 15 Feb 2012 15:44:21 -0600
+
 python-cql (1.0.8-1) UNRELEASED; urgency=low
 
   * Fix handling of comment-like characters (e.g., "--", "//")
