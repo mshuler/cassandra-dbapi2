@@ -1,3 +1,12 @@
+python-cql (1.0.10-1) UNRELEASED; urgency=low
+
+  * Expose column name storage types
+  * Fix terrible performance issue for large CQL queries
+  * Skip CQL3 tests when not supported by Cassandra backend
+  * Fix error message given on unexpected CqlResultType
+
+ -- paul cannon <paul@datastax.com>  Mon, 26 Mar 2012 15:36:34 -0500
+
 python-cql (1.0.9-1) UNRELEASED; urgency=low
 
   * allow for user-definable behavior on decode errors
