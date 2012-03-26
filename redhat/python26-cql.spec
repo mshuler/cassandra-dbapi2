@@ -1,5 +1,5 @@
 Name:           python26-cql
-Version:        1.0.9
+Version:        1.0.10
 Release:        1
 Summary:        DB-API 2.0 compliant client library for Cassandra/CQL
 
