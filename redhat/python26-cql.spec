@@ -1,5 +1,5 @@
 Name:           python26-cql
-Version:        1.0.10
+Version:        1.4.0
 Release:        1
 Summary:        DB-API 2.0 compliant client library for Cassandra/CQL
 
@@ -10,7 +10,7 @@ Source0:        http://cassandra-dbapi2.apache-extras.org.codespot.com/files/cql
 BuildArch:      noarch
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
-Requires:       /usr/bin/python2.6, python26-thrift
+Requires:       python(abi) >= 2.6, python26-thrift
 
 %global __python python2.6
 %global python26_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")
