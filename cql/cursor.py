@@ -1,4 +1,3 @@
-
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -15,39 +14,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import re
-import zlib
-
 import cql
-from cql.marshal import prepare_inline, prepare_query, PreparedQuery
 from cql.decoders import SchemaDecoder
-from cql.cassandra.ttypes import (
-    Compression,
-    CqlResultType,
-    InvalidRequestException,
-    UnavailableException,
-    TimedOutException,
-    SchemaDisagreementException)
-from thrift.Thrift import TApplicationException
+from cql.query import prepare_inline
 
 _COUNT_DESCRIPTION = (None, None, None, None, None, None, None)
-_VOID_DESCRIPTION = (None)
-
-MIN_THRIFT_FOR_PREPARED_QUERIES = (19, 27, 0)
+_VOID_DESCRIPTION = None
 
 class Cursor:
-    _keyspace_re = re.compile("USE (\w+);?",
-                              re.IGNORECASE | re.MULTILINE)
-    _cfamily_re = re.compile("\s*SELECT\s+.+?\s+FROM\s+[\']?(\w+)",
-                             re.IGNORECASE | re.MULTILINE | re.DOTALL)
-    _ddl_re = re.compile("\s*(CREATE|ALTER|DROP)\s+",
-                         re.IGNORECASE | re.MULTILINE)
+    default_decoder = SchemaDecoder
     supports_prepared_queries = False
+    supports_column_types = True
     supports_name_info = True
 
     def __init__(self, parent_connection):
-        self.open_socket = True
         self._connection = parent_connection
+        self.cql_major_version = parent_connection.cql_major_version
 
         # A list of 7-tuples corresponding to the column metadata for the
         # current row (populated on execute() and on fetchone()):
@@ -61,46 +43,16 @@ class Cursor:
 
         self.arraysize = 1
         self.rowcount = -1      # Populate on execute()
-        self.compression = 'GZIP'
+        self.compression = None
+        self.consistency_level = None
         self.decoder = None
-
-        if hasattr(parent_connection.client, 'execute_prepared_cql_query') \
-                and parent_connection.remote_thrift_version >= MIN_THRIFT_FOR_PREPARED_QUERIES:
-            self.supports_prepared_queries = True
 
     ###
     # Cursor API
     ###
 
     def close(self):
-        self.open_socket = False
-
-    def compress_query_text(self, querytext):
-        if self.compression == 'GZIP':
-            compressed_q = zlib.compress(querytext)
-        else:
-            compressed_q = querytext
-        req_compression = getattr(Compression, self.compression)
-        return compressed_q, req_compression
-
-    def prepare_inline(self, query, params):
-        try:
-            prepared_q_text = prepare_inline(query, params)
-        except KeyError, e:
-            raise cql.ProgrammingError("Unmatched named substitution: " +
-                                       "%s not given for %r" % (e, query))
-        return self.compress_query_text(prepared_q_text)
-
-    def prepare_query(self, query, paramtypes=None):
-        prepared_q_text, paramnames = prepare_query(query)
-        compressed_q, compression = self.compress_query_text(prepared_q_text)
-        presult = self._connection.client.prepare_cql_query(compressed_q, compression)
-        assert presult.count == len(paramnames)
-        if presult.variable_types is None and presult.count > 0:
-            raise cql.ProgrammingError("Cassandra did not provide types for bound"
-                                       " parameters. Prepared statements are only"
-                                       " supported with cql3.")
-        return PreparedQuery(query, presult.itemId, presult.variable_types, paramnames)
+        self._connection = None
 
     def pre_execution_setup(self):
         self.__checksock()
@@ -108,66 +60,85 @@ class Cursor:
         self.rowcount = 0
         self.description = None
         self.name_info = None
+        self.column_types = None
 
-    def execute(self, cql_query, params={}, decoder=None):
-        self.pre_execution_setup()
-
-        prepared_q, compress = self.prepare_inline(cql_query, params)
-        doquery = self._connection.client.execute_cql_query
-        response = self.handle_cql_execution_errors(doquery, prepared_q, compress)
-
-        return self.process_execution_results(response, decoder=decoder)
-
-    def execute_prepared(self, prepared_query, params={}, decoder=None):
-        self.pre_execution_setup()
-
-        doquery = self._connection.client.execute_prepared_cql_query
-        paramvals = prepared_query.encode_params(params)
-        response = self.handle_cql_execution_errors(doquery, prepared_query.itemid, paramvals)
-
-        return self.process_execution_results(response, decoder=decoder)
-
-    def handle_cql_execution_errors(self, executor, *args, **kwargs):
+    def prepare_inline(self, query, params):
         try:
-            return executor(*args, **kwargs)
-        except InvalidRequestException, ire:
-            raise cql.ProgrammingError("Bad Request: %s" % ire.why)
-        except SchemaDisagreementException, sde:
-            raise cql.IntegrityError("Schema versions disagree, (try again later).")
-        except UnavailableException:
-            raise cql.OperationalError("Unable to complete request: one or "
-                                       "more nodes were unavailable.")
-        except TimedOutException:
-            raise cql.OperationalError("Request did not complete within rpc_timeout.")
-        except TApplicationException, tapp:
-            raise cql.InternalError("Internal application error")
+            return prepare_inline(query, params)
+        except KeyError, e:
+            raise cql.ProgrammingError("Unmatched named substitution: " +
+                                       "%s not given for %r" % (e, query))
 
-    def process_execution_results(self, response, decoder=None):
-        if response.type == CqlResultType.ROWS:
-            self.decoder = (decoder or SchemaDecoder)(response.schema)
-            self.result = response.rows
-            self.rs_idx = 0
-            self.rowcount = len(self.result)
-            if self.result:
-                self.description, self.name_info = self.decoder.decode_metadata(self.result[0])
-        elif response.type == CqlResultType.INT:
-            self.result = [(response.num,)]
-            self.rs_idx = 0
-            self.rowcount = 1
-            # TODO: name could be the COUNT expression
-            self.description = _COUNT_DESCRIPTION
-            self.name_info = None
-        elif response.type == CqlResultType.VOID:
-            self.result = []
-            self.rs_idx = 0
-            self.rowcount = 0
-            self.description = _VOID_DESCRIPTION
-            self.name_info = ()
+    def execute(self, cql_query, params={}, decoder=None, consistency_level=None):
+        # note that 'decoder' here is actually the decoder class, not the
+        # instance to be used for decoding. bad naming, but it's in use now.
+        if isinstance(cql_query, unicode):
+            raise ValueError("CQL query must be bytes, not unicode")
+        self.pre_execution_setup()
+        prepared_q = self.prepare_inline(cql_query, params)
+        cl = consistency_level or self.consistency_level
+        response = self.get_response(prepared_q, cl)
+        return self.process_execution_results(response, decoder=decoder)
+
+    def execute_prepared(self, prepared_query, params={}, decoder=None,
+                         consistency_level=None):
+        # note that 'decoder' here is actually the decoder class, not the
+        # instance to be used for decoding. bad naming, but it's in use now.
+        self.pre_execution_setup()
+        cl = consistency_level or self.consistency_level
+        response = self.get_response_prepared(prepared_query, params, cl)
+        return self.process_execution_results(response, decoder=decoder)
+
+    def get_metadata_info(self, row):
+        self.description = description = []
+        self.name_info = name_info = []
+        self.column_types = column_types = []
+        for colid in self.columninfo(row):
+            name, nbytes, vtype, ctype = self.get_column_metadata(colid)
+            column_types.append(vtype)
+            description.append((name, vtype.cass_parameterized_type(),
+                                None, None, None, None, True))
+            name_info.append((nbytes, ctype))
+
+    def get_column_metadata(self, column_id):
+        return self.decoder.decode_metadata_and_type(column_id)
+
+    def decode_row(self, row):
+        values = []
+        bytevals = self.columnvalues(row)
+        for val, vtype, nameinfo in zip(bytevals, self.column_types, self.name_info):
+            values.append(self.decoder.decode_value(val, vtype, nameinfo[0]))
+        return values
+
+    def fetchone(self):
+        self.__checksock()
+        if self.rs_idx == len(self.result):
+            return None
+
+        row = self.result[self.rs_idx]
+        self.rs_idx += 1
+        if self.description is _COUNT_DESCRIPTION:
+            return row
         else:
-            raise Exception('unknown result type %s' % response.type)
+            if self.cql_major_version < 3:
+                # (don't bother redecoding descriptions or names otherwise)
+                self.get_metadata_info(row)
+            return self.decode_row(row)
 
-        # 'Return values are not defined.'
-        return True
+    def fetchmany(self, size=None):
+        self.__checksock()
+        if size is None:
+            size = self.arraysize
+        # we avoid leveraging fetchone here to avoid decoding metadata unnecessarily
+        L = []
+        while len(L) < size and self.rs_idx < len(self.result):
+            row = self.result[self.rs_idx]
+            self.rs_idx += 1
+            L.append(self.decode_row(row))
+        return L
+
+    def fetchall(self):
+        return self.fetchmany(len(self.result) - self.rs_idx)
 
     def executemany(self, operation_list, argslist):
         self.__checksock()
@@ -181,34 +152,6 @@ class Cursor:
 
         for idx in xrange(opssize):
             self.execute(operation_list[idx], *argslist[idx])
-
-    def fetchone(self):
-        self.__checksock()
-        if self.rs_idx == len(self.result):
-            return None
-
-        row = self.result[self.rs_idx]
-        self.rs_idx += 1
-        if self.description is _COUNT_DESCRIPTION:
-            return row
-        else:
-            self.description, self.name_info = self.decoder.decode_metadata(row)
-            return self.decoder.decode_row(row)
-
-    def fetchmany(self, size=None):
-        self.__checksock()
-        if size is None:
-            size = self.arraysize
-        # we avoid leveraging fetchone here to avoid calling decode_metadata unnecessarily
-        L = []
-        while len(L) < size and self.rs_idx < len(self.result):
-            row = self.result[self.rs_idx]
-            self.rs_idx += 1
-            L.append(self.decoder.decode_row(row))
-        return L
-
-    def fetchall(self):
-        return self.fetchmany(len(self.result) - self.rs_idx)
 
     ###
     # extra, for cqlsh
@@ -250,6 +193,5 @@ class Cursor:
     ###
 
     def __checksock(self):
-        if not self.open_socket:
-            raise cql.InternalError("Cursor belonging to %s has been closed." %
-                                    (self._connection, ))
+        if self._connection is None or not self._connection.open_socket:
+            raise cql.ProgrammingError("Cursor has been closed.")
