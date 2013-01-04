@@ -25,12 +25,13 @@ import decimal
 
 TEST_HOST = os.environ.get('CQL_TEST_HOST', 'localhost')
 TEST_PORT = int(os.environ.get('CQL_TEST_PORT', 9170))
-TEST_CQL_VERSION = '3.0.0-beta1'
+TEST_CQL_VERSION = os.environ.get('CQL_TEST_VERSION', '3.0.0-beta1')
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 import cql
 
+MIN_THRIFT_FOR_CQL_3_0_0_FINAL = (19, 33, 0)
 
 class TestPreparedQueries(unittest.TestCase):
     cursor = None
@@ -39,7 +40,7 @@ class TestPreparedQueries(unittest.TestCase):
     def setUp(self):
         try:
             self.dbconn = cql.connect(TEST_HOST, TEST_PORT, cql_version=TEST_CQL_VERSION)
-        except cql.cursor.TApplicationException:
+        except cql.thrifteries.TApplicationException:
             # set_cql_version (and thus, cql3) not supported; skip all of these
             self.cursor = None
             return
@@ -57,10 +58,15 @@ class TestPreparedQueries(unittest.TestCase):
 
     def create_schema(self):
         ksname = 'CqlDriverTest_%d' % random.randrange(0x100000000)
-        self.cursor.execute("""create keyspace %s
-                                 with strategy_class='SimpleStrategy'
-                                 and strategy_options:replication_factor=1"""
-                            % ksname)
+        if self.dbconn.remote_thrift_version >= MIN_THRIFT_FOR_CQL_3_0_0_FINAL:
+            create_ks = """create keyspace %s
+                             with replication = {'class': 'SimpleStrategy',
+                                                 'replication_factor': 1};"""
+        else:
+            create_ks = """create keyspace %s
+                             with strategy_class='SimpleStrategy'
+                             and strategy_options:replication_factor=1"""
+        self.cursor.execute(create_ks % ksname)
         self.cursor.execute('use %s' % ksname)
         self.cursor.execute("""create columnfamily abc (thekey timestamp primary key,
                                                         theint int,
@@ -91,6 +97,19 @@ class TestPreparedQueries(unittest.TestCase):
         self.cursor.execute_prepared(q, {'key': '1969-08-15+0000'})
         results = self.cursor.fetchone()
         self.assertEqual(results[2], '\x00\xff\x80\x08')
+
+    def test_prepared_select_no_terms(self):
+        return
+        if self.cursor is None:
+            return
+
+        q = self.cursor.prepare_query("select thekey, thedecimal, theblob from abc")
+
+        self.cursor.execute_prepared(q, {})
+        results = self.cursor.fetchall()
+        floats = set(row[1] for row in results)
+
+        self.assertEqual(set([None, decimal.Decimal('-14.400')]), floats)
 
     def test_prepared_insert(self):
         if self.cursor is None:
@@ -155,3 +174,9 @@ class TestPreparedQueries(unittest.TestCase):
         self.cursor.execute("select id, feet from counterito where id=2 and name = 'krang'")
         results = self.cursor.fetchone()
         self.assertEqual(results[1], 1)
+
+    def test_reject_unicode(self):
+        if self.cursor is None:
+            return
+
+        self.assertRaises(ValueError, self.cursor.prepare_query, u'select * from system.schema_keyspaces')

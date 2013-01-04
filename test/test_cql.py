@@ -19,7 +19,7 @@
 # PYTHONPATH=test nosetests --tests=test_cql:TestCql.test_column_count
 
 # Note that some tests will be skipped if run against a cluster with
-# RandomPartitioner.
+# random partitioning semantics.
 
 # to configure behavior, define $CQL_TEST_HOST to the destination address
 # for Thrift connections, and $CQL_TEST_PORT to the associated port.
@@ -40,6 +40,9 @@ sys.path.append(join(abspath(dirname(__file__)), '..'))
 
 import cql
 from cql.cassandra import Cassandra
+from cql.cqltypes import AsciiType, UUIDType
+
+RANDOM_PARTITIONERS = ('RandomPartitioner', 'Murmur3Partitioner')
 
 def get_thrift_client(host=TEST_HOST, port=TEST_PORT):
     socket = TSocket.TSocket(host, port)
@@ -49,7 +52,6 @@ def get_thrift_client(host=TEST_HOST, port=TEST_PORT):
     client.transport = transport
     client.transport.open()
     return client
-thrift_client = get_thrift_client()
 
 def uuid1bytes_to_millis(uuidbytes):
     return (uuid.UUID(bytes=uuidbytes).get_time() / 10000) - 12219292800000L
@@ -161,7 +163,10 @@ class TestCql(unittest.TestCase):
     keyspace = None
 
     def setUp(self):
-        dbconn = cql.connect(TEST_HOST, TEST_PORT)
+        self.thrift_client = get_thrift_client()
+
+        # all tests in this module are against cql 2. change would be welcomed.
+        dbconn = cql.connect(TEST_HOST, TEST_PORT, cql_version='2.0.0')
         self.cursor = dbconn.cursor()
         self.randstr = randstring()
         self.keyspace = create_schema(self.cursor, self.randstr)
@@ -182,7 +187,19 @@ class TestCql(unittest.TestCase):
         return ksname
 
     def get_partitioner(self):
-        return thrift_client.describe_partitioner()
+        return self.thrift_client.describe_partitioner()
+
+    def assertIsSubclass(self, class_a, class_b):
+        assert issubclass(class_a, class_b), '%r is not a subclass of %r' % (class_a, class_b)
+
+    def check_ordered_partitioner(self, msg="Key ranges don't make sense under RP"):
+        if self.get_partitioner().split('.')[-1] in RANDOM_PARTITIONERS:
+            # skipTest is Python >= 2.7
+            if hasattr(self, 'skipTest'):
+                self.skipTest(msg)
+            return False
+        return True
+
 
         
     def test_select_simple(self):
@@ -213,12 +230,8 @@ class TestCql(unittest.TestCase):
     def test_select_row_range(self):
         "retrieve a range of rows with columns"
 
-        if self.get_partitioner().split('.')[-1] == 'RandomPartitioner':
-            # skipTest is >= Python 2.7
-            if hasattr(self, 'skipTest'):
-                self.skipTest("Key ranges don't make sense under RP")
-            else: return None
-
+        if not self.check_ordered_partitioner():
+            return
         # everything
         cursor = self.cursor
         cursor.execute("SELECT * FROM StandardLongA")
@@ -377,12 +390,8 @@ class TestCql(unittest.TestCase):
     def test_index_scan_with_start_key(self):
         "indexed scan with a starting key"
 
-        if self.get_partitioner().split('.')[-1] == 'RandomPartitioner':
-            # skipTest is Python >= 2.7
-            if hasattr(self, 'skipTest'):
-                self.skipTest("Key ranges don't make sense under RP")
-            else: return None
-
+        if not self.check_ordered_partitioner():
+            return
         cursor = self.cursor
         cursor.execute("""
             SELECT KEY, 'birthdate' FROM IndexedA 
@@ -394,6 +403,9 @@ class TestCql(unittest.TestCase):
 
     def test_no_where_clause(self):
         "empty where clause (range query w/o start key)"
+
+        if not self.check_ordered_partitioner():
+            return
         cursor = self.cursor
         cursor.execute("SELECT KEY, 'col' FROM StandardString1 LIMIT 3")
         self.assertEqual(cursor.rowcount, 3)
@@ -508,13 +520,13 @@ class TestCql(unittest.TestCase):
         """, {'ks': ksname2})
 
         # TODO: temporary (until this can be done with CQL).
-        ksdef = thrift_client.describe_keyspace(ksname1)
+        ksdef = self.thrift_client.describe_keyspace(ksname1)
 
         strategy_class = "org.apache.cassandra.locator.NetworkTopologyStrategy"
         self.assertEqual(ksdef.strategy_class, strategy_class)
         self.assertEqual(ksdef.strategy_options['DC1'], "1")
 
-        ksdef = thrift_client.describe_keyspace(ksname2)
+        ksdef = self.thrift_client.describe_keyspace(ksname2)
 
         strategy_class = "org.apache.cassandra.locator.NetworkTopologyStrategy"
         self.assertEqual(ksdef.strategy_class, strategy_class)
@@ -531,14 +543,14 @@ class TestCql(unittest.TestCase):
         """, {'ks': ksname})
 
         # TODO: temporary (until this can be done with CQL).
-        thrift_client.describe_keyspace(ksname)
+        self.thrift_client.describe_keyspace(ksname)
 
         cursor.execute('DROP SCHEMA :ks;', {'ks': ksname})
 
         # Technically this should throw a ttypes.NotFound(), but this is
         # temporary and so not worth requiring it on PYTHONPATH.
         self.assertRaises(Exception,
-                          thrift_client.describe_keyspace,
+                          self.thrift_client.describe_keyspace,
                           ksname)
 
     def test_create_column_family(self):
@@ -562,7 +574,7 @@ class TestCql(unittest.TestCase):
         """)
 
         # TODO: temporary (until this can be done with CQL).
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         self.assertEqual(len(ksdef.cf_defs), 1)
         cfam= ksdef.cf_defs[0]
         self.assertEqual(len(cfam.column_metadata), 4)
@@ -586,7 +598,7 @@ class TestCql(unittest.TestCase):
         # No column defs
         cursor.execute("""CREATE COLUMNFAMILY NewCf3
                             (KEY varint PRIMARY KEY) WITH comparator = bigint""")
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         self.assertEqual(len(ksdef.cf_defs), 2)
         cfam = [i for i in ksdef.cf_defs if i.name == "NewCf3"][0]
         self.assertEqual(cfam.comparator_type, "org.apache.cassandra.db.marshal.LongType")
@@ -595,7 +607,7 @@ class TestCql(unittest.TestCase):
         cursor.execute("""CREATE COLUMNFAMILY NewCf4
                             (KEY varint PRIMARY KEY, 'a' varint, 'b' varint)
                             WITH comparator = text;""")
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         self.assertEqual(len(ksdef.cf_defs), 3)
         cfam = [i for i in ksdef.cf_defs if i.name == "NewCf4"][0]
         self.assertEqual(len(cfam.column_metadata), 2)
@@ -615,12 +627,12 @@ class TestCql(unittest.TestCase):
         cursor.execute('CREATE COLUMNFAMILY CF4Drop (KEY varint PRIMARY KEY);')
 
         # TODO: temporary (until this can be done with CQL).
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         assert len(ksdef.cf_defs), "Column family not created!"
 
         cursor.execute('DROP COLUMNFAMILY CF4Drop;')
 
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         assert not len(ksdef.cf_defs), "Column family not deleted!"
 
     def test_create_indexs(self):
@@ -632,7 +644,7 @@ class TestCql(unittest.TestCase):
         cursor.execute("CREATE INDEX ON CreateIndex1 (stuff)")
 
         # TODO: temporary (until this can be done with CQL).
-        ksdef = thrift_client.describe_keyspace(self.keyspace)
+        ksdef = self.thrift_client.describe_keyspace(self.keyspace)
         cfam = [i for i in ksdef.cf_defs if i.name == "CreateIndex1"][0]
         items = [i for i in cfam.column_metadata if i.name == "items"][0]
         stuff = [i for i in cfam.column_metadata if i.name == "stuff"][0]
@@ -646,7 +658,7 @@ class TestCql(unittest.TestCase):
                           "CREATE INDEX ON CreateIndex1 (stuff)")
 
     def test_drop_indexes(self):
-        "droping indexes on columns"
+        "dropping indexes on columns"
         cursor = self.cursor
         ksname = self.make_keyspace_name('DropIndexTests')
         cursor.execute("""CREATE KEYSPACE :ks WITH strategy_options:replication_factor = '1'
@@ -656,7 +668,7 @@ class TestCql(unittest.TestCase):
         cursor.execute("CREATE COLUMNFAMILY IndexedCF (KEY text PRIMARY KEY, n text)")
         cursor.execute("CREATE INDEX namedIndex ON IndexedCF (n)")
 
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         columns = ksdef.cf_defs[0].column_metadata
 
         self.assertEqual(columns[0].index_name, "namedIndex")
@@ -665,7 +677,7 @@ class TestCql(unittest.TestCase):
         # testing "DROP INDEX <INDEX_NAME>"
         cursor.execute("DROP INDEX namedIndex")
 
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         columns = ksdef.cf_defs[0].column_metadata
 
         self.assertEqual(columns[0].index_type, None)
@@ -685,8 +697,10 @@ class TestCql(unittest.TestCase):
             SELECT KEY, '%s' FROM StandardTimeUUID WHERE KEY = 'uuidtest'
         """ % str(timeuuid))
         self.assertEqual(len(cursor.name_info), 2)
-        self.assertEqual(cursor.name_info[0], ('KEY', 'AsciiType'))
-        self.assertEqual(cursor.name_info[1], (timeuuid.bytes, 'UUIDType'))
+        self.assertEqual(cursor.name_info[0][0], 'KEY')
+        self.assertIsSubclass(cursor.name_info[0][1], AsciiType)
+        self.assertEqual(cursor.name_info[1][0], timeuuid.bytes)
+        self.assertIsSubclass(cursor.name_info[1][1], UUIDType)
 
     def test_time_uuid(self):
         "store and retrieve time-based (type 1) uuids"
@@ -1230,7 +1244,7 @@ class TestCql(unittest.TestCase):
         """)
 
         # TODO: temporary (until this can be done with CQL).
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         self.assertEqual(len(ksdef.cf_defs), 1)
         cfam = ksdef.cf_defs[0]
 
@@ -1239,7 +1253,7 @@ class TestCql(unittest.TestCase):
         # testing "add a new column"
         cursor.execute("ALTER COLUMNFAMILY NewCf1 ADD name varchar")
 
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         self.assertEqual(len(ksdef.cf_defs), 1)
         columns = ksdef.cf_defs[0].column_metadata
 
@@ -1250,7 +1264,7 @@ class TestCql(unittest.TestCase):
         # testing "alter a column type"
         cursor.execute("ALTER COLUMNFAMILY NewCf1 ALTER name TYPE ascii")
 
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         self.assertEqual(len(ksdef.cf_defs), 1)
         columns = ksdef.cf_defs[0].column_metadata
 
@@ -1266,7 +1280,7 @@ class TestCql(unittest.TestCase):
         # testing 'drop an existing column'
         cursor.execute("ALTER COLUMNFAMILY NewCf1 DROP name")
 
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         self.assertEqual(len(ksdef.cf_defs), 1)
         columns = ksdef.cf_defs[0].column_metadata
 
@@ -1383,7 +1397,7 @@ class TestCql(unittest.TestCase):
         """)
 
         # TODO: temporary (until this can be done with CQL).
-        ksdef = thrift_client.describe_keyspace(ksname)
+        ksdef = self.thrift_client.describe_keyspace(ksname)
         cfdef = ksdef.cf_defs[0]
 
         self.assertEqual(len(ksdef.cf_defs), 1)
@@ -1471,3 +1485,6 @@ class TestCql(unittest.TestCase):
         cursor.execute("TRUNCATE StandardString1")
         cursor.execute("SELECT * FROM StandardString1")
         assert cursor.rowcount == 0, "expected zero results, got %d" % cursor.rowcount
+
+    def test_reject_unicode(self):
+        self.assertRaises(ValueError, self.cursor.execute, u'select * from system.schema_keyspaces')
