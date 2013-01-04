@@ -1,3 +1,11 @@
+python-cql (1.4.0-1) UNRELEASED; urgency=low
+
+  * Update for recent CQL3 protocol changes (CASSANDRA-4734)
+  * Open the provided transport if it isn't already
+  * Update thrift definitions (19.34.0 -> 19.35.0)
+
+ -- Ben Gamble <bgamble@datastax.com>  Fri, 04 Jan 2013 12:30:40 -0600
+
 python-cql (1.0.10-1) UNRELEASED; urgency=low
 
   * Expose column name storage types
