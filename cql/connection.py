@@ -37,7 +37,7 @@ class Connection(object):
         *                       compression supported by both sides.
         * consistency_level ..: consistency level to use for CQL3 queries (optional);
         *                       "ONE" is the default CL, other supported values are:
-        *                       "ANY", "TWO", "THREE", "QUORUM", "LOCAL_QUORUM",
+        *                       "ANY", "TWO", "THREE", "QUORUM", "LOCAL_ONE", "LOCAL_QUORUM",
         *                       "EACH_QUORUM" and "ALL";
         *                       overridable on per-query basis.
         * transport...........: Thrift transport to use (optional);

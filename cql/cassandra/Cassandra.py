@@ -119,7 +119,7 @@ class Iface:
   def get_indexed_slices(self, column_parent, index_clause, column_predicate, consistency_level):
     """
     Returns the subset of columns specified in SlicePredicate for the rows matching the IndexClause
-    @Deprecated; use get_range_slices instead with range.row_filter specified
+    @deprecated use get_range_slices instead with range.row_filter specified
 
     Parameters:
      - column_parent
@@ -314,6 +314,16 @@ class Iface:
     """
     pass
 
+  def describe_splits_ex(self, cfName, start_token, end_token, keys_per_split):
+    """
+    Parameters:
+     - cfName
+     - start_token
+     - end_token
+     - keys_per_split
+    """
+    pass
+
   def system_add_column_family(self, cf_def):
     """
     adds a column family. returns the new schema id.
@@ -431,7 +441,7 @@ class Iface:
 
   def set_cql_version(self, version):
     """
-    @Deprecated This is now a no-op. Please use the CQL3 specific methods instead.
+    @deprecated This is now a no-op. Please use the CQL3 specific methods instead.
 
     Parameters:
      - version
@@ -822,7 +832,7 @@ class Client(Iface):
   def get_indexed_slices(self, column_parent, index_clause, column_predicate, consistency_level):
     """
     Returns the subset of columns specified in SlicePredicate for the rows matching the IndexClause
-    @Deprecated; use get_range_slices instead with range.row_filter specified
+    @deprecated use get_range_slices instead with range.row_filter specified
 
     Parameters:
      - column_parent
@@ -1513,6 +1523,44 @@ class Client(Iface):
       return result.success
     raise TApplicationException(TApplicationException.MISSING_RESULT, "trace_next_query failed: unknown result");
 
+  def describe_splits_ex(self, cfName, start_token, end_token, keys_per_split):
+    """
+    Parameters:
+     - cfName
+     - start_token
+     - end_token
+     - keys_per_split
+    """
+    self.send_describe_splits_ex(cfName, start_token, end_token, keys_per_split)
+    return self.recv_describe_splits_ex()
+
+  def send_describe_splits_ex(self, cfName, start_token, end_token, keys_per_split):
+    self._oprot.writeMessageBegin('describe_splits_ex', TMessageType.CALL, self._seqid)
+    args = describe_splits_ex_args()
+    args.cfName = cfName
+    args.start_token = start_token
+    args.end_token = end_token
+    args.keys_per_split = keys_per_split
+    args.write(self._oprot)
+    self._oprot.writeMessageEnd()
+    self._oprot.trans.flush()
+
+  def recv_describe_splits_ex(self, ):
+    (fname, mtype, rseqid) = self._iprot.readMessageBegin()
+    if mtype == TMessageType.EXCEPTION:
+      x = TApplicationException()
+      x.read(self._iprot)
+      self._iprot.readMessageEnd()
+      raise x
+    result = describe_splits_ex_result()
+    result.read(self._iprot)
+    self._iprot.readMessageEnd()
+    if result.success is not None:
+      return result.success
+    if result.ire is not None:
+      raise result.ire
+    raise TApplicationException(TApplicationException.MISSING_RESULT, "describe_splits_ex failed: unknown result");
+
   def system_add_column_family(self, cf_def):
     """
     adds a column family. returns the new schema id.
@@ -1974,7 +2022,7 @@ class Client(Iface):
 
   def set_cql_version(self, version):
     """
-    @Deprecated This is now a no-op. Please use the CQL3 specific methods instead.
+    @deprecated This is now a no-op. Please use the CQL3 specific methods instead.
 
     Parameters:
      - version
@@ -2037,6 +2085,7 @@ class Processor(Iface, TProcessor):
     self._processMap["describe_keyspace"] = Processor.process_describe_keyspace
     self._processMap["describe_splits"] = Processor.process_describe_splits
     self._processMap["trace_next_query"] = Processor.process_trace_next_query
+    self._processMap["describe_splits_ex"] = Processor.process_describe_splits_ex
     self._processMap["system_add_column_family"] = Processor.process_system_add_column_family
     self._processMap["system_drop_column_family"] = Processor.process_system_drop_column_family
     self._processMap["system_add_keyspace"] = Processor.process_system_add_keyspace
@@ -2505,6 +2554,20 @@ class Processor(Iface, TProcessor):
     result = trace_next_query_result()
     result.success = self._handler.trace_next_query()
     oprot.writeMessageBegin("trace_next_query", TMessageType.REPLY, seqid)
+    result.write(oprot)
+    oprot.writeMessageEnd()
+    oprot.trans.flush()
+
+  def process_describe_splits_ex(self, seqid, iprot, oprot):
+    args = describe_splits_ex_args()
+    args.read(iprot)
+    iprot.readMessageEnd()
+    result = describe_splits_ex_result()
+    try:
+      result.success = self._handler.describe_splits_ex(args.cfName, args.start_token, args.end_token, args.keys_per_split)
+    except InvalidRequestException, ire:
+      result.ire = ire
+    oprot.writeMessageBegin("describe_splits_ex", TMessageType.REPLY, seqid)
     result.write(oprot)
     oprot.writeMessageEnd()
     oprot.trans.flush()
@@ -7349,6 +7412,191 @@ class trace_next_query_result:
   def __ne__(self, other):
     return not (self == other)
 
+class describe_splits_ex_args:
+  """
+  Attributes:
+   - cfName
+   - start_token
+   - end_token
+   - keys_per_split
+  """
+
+  thrift_spec = (
+    None, # 0
+    (1, TType.STRING, 'cfName', None, None, ), # 1
+    (2, TType.STRING, 'start_token', None, None, ), # 2
+    (3, TType.STRING, 'end_token', None, None, ), # 3
+    (4, TType.I32, 'keys_per_split', None, None, ), # 4
+  )
+
+  def __init__(self, cfName=None, start_token=None, end_token=None, keys_per_split=None,):
+    self.cfName = cfName
+    self.start_token = start_token
+    self.end_token = end_token
+    self.keys_per_split = keys_per_split
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      if fid == 1:
+        if ftype == TType.STRING:
+          self.cfName = iprot.readString();
+        else:
+          iprot.skip(ftype)
+      elif fid == 2:
+        if ftype == TType.STRING:
+          self.start_token = iprot.readString();
+        else:
+          iprot.skip(ftype)
+      elif fid == 3:
+        if ftype == TType.STRING:
+          self.end_token = iprot.readString();
+        else:
+          iprot.skip(ftype)
+      elif fid == 4:
+        if ftype == TType.I32:
+          self.keys_per_split = iprot.readI32();
+        else:
+          iprot.skip(ftype)
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('describe_splits_ex_args')
+    if self.cfName is not None:
+      oprot.writeFieldBegin('cfName', TType.STRING, 1)
+      oprot.writeString(self.cfName)
+      oprot.writeFieldEnd()
+    if self.start_token is not None:
+      oprot.writeFieldBegin('start_token', TType.STRING, 2)
+      oprot.writeString(self.start_token)
+      oprot.writeFieldEnd()
+    if self.end_token is not None:
+      oprot.writeFieldBegin('end_token', TType.STRING, 3)
+      oprot.writeString(self.end_token)
+      oprot.writeFieldEnd()
+    if self.keys_per_split is not None:
+      oprot.writeFieldBegin('keys_per_split', TType.I32, 4)
+      oprot.writeI32(self.keys_per_split)
+      oprot.writeFieldEnd()
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    if self.cfName is None:
+      raise TProtocol.TProtocolException(message='Required field cfName is unset!')
+    if self.start_token is None:
+      raise TProtocol.TProtocolException(message='Required field start_token is unset!')
+    if self.end_token is None:
+      raise TProtocol.TProtocolException(message='Required field end_token is unset!')
+    if self.keys_per_split is None:
+      raise TProtocol.TProtocolException(message='Required field keys_per_split is unset!')
+    return
+
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
+class describe_splits_ex_result:
+  """
+  Attributes:
+   - success
+   - ire
+  """
+
+  thrift_spec = (
+    (0, TType.LIST, 'success', (TType.STRUCT,(CfSplit, CfSplit.thrift_spec)), None, ), # 0
+    (1, TType.STRUCT, 'ire', (InvalidRequestException, InvalidRequestException.thrift_spec), None, ), # 1
+  )
+
+  def __init__(self, success=None, ire=None,):
+    self.success = success
+    self.ire = ire
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      if fid == 0:
+        if ftype == TType.LIST:
+          self.success = []
+          (_etype334, _size331) = iprot.readListBegin()
+          for _i335 in xrange(_size331):
+            _elem336 = CfSplit()
+            _elem336.read(iprot)
+            self.success.append(_elem336)
+          iprot.readListEnd()
+        else:
+          iprot.skip(ftype)
+      elif fid == 1:
+        if ftype == TType.STRUCT:
+          self.ire = InvalidRequestException()
+          self.ire.read(iprot)
+        else:
+          iprot.skip(ftype)
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('describe_splits_ex_result')
+    if self.success is not None:
+      oprot.writeFieldBegin('success', TType.LIST, 0)
+      oprot.writeListBegin(TType.STRUCT, len(self.success))
+      for iter337 in self.success:
+        iter337.write(oprot)
+      oprot.writeListEnd()
+      oprot.writeFieldEnd()
+    if self.ire is not None:
+      oprot.writeFieldBegin('ire', TType.STRUCT, 1)
+      self.ire.write(oprot)
+      oprot.writeFieldEnd()
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    return
+
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
 class system_add_column_family_args:
   """
   Attributes:
@@ -8957,10 +9205,10 @@ class execute_prepared_cql_query_args:
       elif fid == 2:
         if ftype == TType.LIST:
           self.values = []
-          (_etype334, _size331) = iprot.readListBegin()
-          for _i335 in xrange(_size331):
-            _elem336 = iprot.readString();
-            self.values.append(_elem336)
+          (_etype341, _size338) = iprot.readListBegin()
+          for _i342 in xrange(_size338):
+            _elem343 = iprot.readString();
+            self.values.append(_elem343)
           iprot.readListEnd()
         else:
           iprot.skip(ftype)
@@ -8981,8 +9229,8 @@ class execute_prepared_cql_query_args:
     if self.values is not None:
       oprot.writeFieldBegin('values', TType.LIST, 2)
       oprot.writeListBegin(TType.STRING, len(self.values))
-      for iter337 in self.values:
-        oprot.writeString(iter337)
+      for iter344 in self.values:
+        oprot.writeString(iter344)
       oprot.writeListEnd()
       oprot.writeFieldEnd()
     oprot.writeFieldStop()
@@ -9156,10 +9404,10 @@ class execute_prepared_cql3_query_args:
       elif fid == 2:
         if ftype == TType.LIST:
           self.values = []
-          (_etype341, _size338) = iprot.readListBegin()
-          for _i342 in xrange(_size338):
-            _elem343 = iprot.readString();
-            self.values.append(_elem343)
+          (_etype348, _size345) = iprot.readListBegin()
+          for _i349 in xrange(_size345):
+            _elem350 = iprot.readString();
+            self.values.append(_elem350)
           iprot.readListEnd()
         else:
           iprot.skip(ftype)
@@ -9185,8 +9433,8 @@ class execute_prepared_cql3_query_args:
     if self.values is not None:
       oprot.writeFieldBegin('values', TType.LIST, 2)
       oprot.writeListBegin(TType.STRING, len(self.values))
-      for iter344 in self.values:
-        oprot.writeString(iter344)
+      for iter351 in self.values:
+        oprot.writeString(iter351)
       oprot.writeListEnd()
       oprot.writeFieldEnd()
     if self.consistency is not None:

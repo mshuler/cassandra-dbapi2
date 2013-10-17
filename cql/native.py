@@ -47,7 +47,8 @@ class ConsistencyLevel(object):
                 4: 'QUORUM',
                 5: 'ALL',
                 6: 'LOCAL_QUORUM',
-                7: 'EACH_QUORUM'}[value]
+                7: 'EACH_QUORUM',
+                10:'LOCAL_ONE'}[value]
 
     @classmethod
     def value_from_name(cls, name):
@@ -58,7 +59,8 @@ class ConsistencyLevel(object):
                 'QUORUM': 4,
                 'ALL': 5,
                 'LOCAL_QUORUM': 6,
-                'EACH_QUORUM': 7}[name]
+                'EACH_QUORUM': 7,
+                'LOCAL_ONE': 10}[name]
 
 class CqlResult:
     def __init__(self, column_metadata, rows):
