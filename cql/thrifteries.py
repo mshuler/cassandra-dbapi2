@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import zlib
+from time import sleep
 import cql
 from cql.cursor import Cursor, _VOID_DESCRIPTION, _COUNT_DESCRIPTION
 from cql.query import cql_quote, cql_quote_name, prepare_query, PreparedQuery
@@ -81,6 +82,7 @@ class ThriftCursor(Cursor):
 
     def get_response_prepared(self, prepared_query, params, consistency_level):
         paramvals = prepared_query.encode_params(params)
+        print paramvals
         cl = getattr(ConsistencyLevel, consistency_level)
         if self.use_cql3_methods:
             doquery = self._connection.client.execute_prepared_cql3_query
@@ -102,7 +104,17 @@ class ThriftCursor(Cursor):
             raise cql.OperationalError("Unable to complete request: one or "
                                        "more nodes were unavailable.")
         except TimedOutException:
-            raise cql.OperationalError("Request did not complete within rpc_timeout.")
+            max_failures = 5
+            failures = 0
+            while (True):
+                try:
+                    res = executor(*args, **kwargs)
+                    return res
+                except TimedOutException, e:
+                    failures += 1
+                    if failures > max_failures:
+                        raise cql.OperationalError("Request did not complete within rpc_timeout.")
+                    sleep(2)
         except TApplicationException, tapp:
             raise cql.InternalError("Internal application error")
 
